@@ -1,0 +1,27 @@
+target/
+*.class
+*.log
+.idea/
+*.iml
+.vscode/
+.classpath
+.project
+.settings/
+.DS_Store
+jacoco.exec
+
+# --- DevOps / local runtime state -------------------------------------------
+# local config overrides (may contain secrets)
+config/application.properties
+# runtime artifacts
+logs/
+*.pid
+# compose/secrets env files (keep .env.example tracked)
+.env
+.env.*
+!.env.example
+# k6 artifacts (summary exports, result streams)
+loadtest/**/results/
+loadtest/**/*.summary.json
+loadtest/**/*.results.json
+loadtest/**/*.csv
