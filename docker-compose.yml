@@ -1,0 +1,102 @@
+# =============================================================================
+# IMS docker-compose stack: MySQL 8 + one-shot schema migration + the API.
+#
+# Bootstrap admin password
+# ------------------------
+# The app service requires IMS_BOOTSTRAP_ADMIN_PASSWORD to be set in a .env
+# file next to this compose file (compose loads .env automatically and the
+# ${VAR:?} below makes it a hard error when missing):
+#
+#   cp .env.example .env
+#   # edit .env -> IMS_BOOTSTRAP_ADMIN_PASSWORD=<strong password>
+#
+# The password is only used on FIRST boot (empty users table) to create the
+# 'admin' account - rotate it immediately after the first login. Never commit
+# the real .env (it is gitignored).
+#
+# Usage:
+#   docker compose up -d --build    # build images, migrate, start the stack
+#   docker compose logs -f app      # follow the API logs
+#   docker compose ps               # app should become (healthy)
+#   docker compose down             # stop (add -v to ALSO WIPE the database)
+# =============================================================================
+
+services:
+  # ---------------------------------------------------------------- MySQL 8 --
+  db:
+    image: mysql:8.0
+    # The IMS schema creates triggers (append-only ledger); with binlog
+    # enabled MySQL 8 refuses CREATE TRIGGER unless this flag is set
+    # (or the migration role has SUPER).
+    command:
+      - --log-bin-trust-function-creators=1
+    environment:
+      MYSQL_ROOT_PASSWORD: ims_root_pw
+      MYSQL_DATABASE: inventory_db
+      MYSQL_USER: ims_app
+      MYSQL_PASSWORD: ims_app_pw
+    volumes:
+      - db-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p$$MYSQL_ROOT_PASSWORD --silent"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 30s
+    # Not published to the host by default. To inspect the DB from your
+    # workstation (e.g. with a local client), uncomment - bind to loopback
+    # only so the DB is not exposed to the network:
+    # ports:
+    #   - "127.0.0.1:3306:3306"
+    restart: unless-stopped
+
+  # ------------------------------------------------- one-shot schema migrate --
+  # Runs com.ims.tools.Migrate (DDL) once per release, then exits.
+  # The MySQL entrypoint grants ims_app ALL on inventory_db, so the app role
+  # can run DDL here; to use root instead, uncomment IMS_MIGRATE_* below.
+  migrate:
+    build: .
+    image: inventory-api:local
+    entrypoint: ["java", "-cp", "inventory-api.jar:lib/*", "com.ims.tools.Migrate"]
+    environment:
+      IMS_DB_URL: jdbc:mysql://db:3306/inventory_db?useSSL=false&allowPublicKeyRetrieval=true
+      IMS_DB_USERNAME: ims_app
+      IMS_DB_PASSWORD: ims_app_pw
+      # DDL-privileged override (Migrate prefers IMS_MIGRATE_* over IMS_DB_*):
+      # IMS_MIGRATE_USERNAME: root
+      # IMS_MIGRATE_PASSWORD: ims_root_pw
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+
+  # ------------------------------------------------------------- API server --
+  app:
+    build: .
+    image: inventory-api:local
+    ports:
+      - "8080:8080"
+    environment:
+      IMS_DB_URL: jdbc:mysql://db:3306/inventory_db?useSSL=false&allowPublicKeyRetrieval=true
+      IMS_DB_USERNAME: ims_app
+      IMS_DB_PASSWORD: ims_app_pw
+      # must listen on all interfaces inside the container
+      IMS_HTTP_HOST: 0.0.0.0
+      IMS_HTTP_PORT: 8080
+      # required - set in .env (see header comment); used only on first boot
+      IMS_BOOTSTRAP_ADMIN_PASSWORD: ${IMS_BOOTSTRAP_ADMIN_PASSWORD:?set in .env - copy .env.example}
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/api/health/ready"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 20s
+    restart: unless-stopped
+
+volumes:
+  db-data:

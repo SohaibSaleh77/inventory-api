@@ -1,0 +1,16 @@
+# Non-secret application defaults. Secrets (DB credentials, bootstrap admin
+# password) live in secret.yaml / inventory-api-secrets.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: inventory-api-config
+  namespace: inventory-api
+  labels:
+    app: inventory-api
+data:
+  # Containers must bind all interfaces for Service routing to work.
+  IMS_HTTP_HOST: "0.0.0.0"
+  IMS_HTTP_PORT: "8080"
+  # MySQL is expected inside the same namespace (see the note in RUNBOOK.md
+  # for provisioning); adjust the host if your MySQL lives elsewhere.
+  IMS_DB_URL: "jdbc:mysql://mysql.inventory-api.svc.cluster.local:3306/inventory_db?useSSL=false&allowPublicKeyRetrieval=true"

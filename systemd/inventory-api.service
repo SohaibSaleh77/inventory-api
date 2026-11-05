@@ -1,0 +1,43 @@
+# inventory-api systemd unit.
+#
+# Install:
+#   sudo cp systemd/inventory-api.service /etc/systemd/system/
+#   sudo cp systemd/inventory-api.env.example /etc/inventory-api/inventory-api.env   # then edit values
+#   sudo mkdir -p /var/log/inventory-api && sudo chown inventory:inventory /var/log/inventory-api
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now inventory-api
+#
+# The app lives in /opt/inventory-api (inventory-api.jar + lib/ from the GitHub release zip):
+#   sudo mkdir -p /opt/inventory-api/lib
+#   sudo cp target/inventory-api.jar /opt/inventory-api/
+#   sudo cp -r target/lib/* /opt/inventory-api/lib/
+#
+# /api/health/live, /ready are public endpoints - wire a local curl loop or
+# a monitoring check to them.
+
+[Unit]
+Description=inventory-api (Inventory Management System)
+After=network-online.target mysql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=inventory
+Group=inventory
+WorkingDirectory=/opt/inventory-api
+EnvironmentFile=/etc/inventory-api/inventory-api.env
+# The lib/* classpath wildcard is expanded by the JVM itself (not the shell).
+# MaxRAMPercentage=75 mirrors the container settings.
+ExecStart=/usr/bin/java -XX:MaxRAMPercentage=75 -cp /opt/inventory-api/inventory-api.jar:/opt/inventory-api/lib/* com.ims.Main
+Restart=always
+RestartSec=5
+# Drain window: SIGTERM, wait up to 30s for in-flight requests before SIGKILL
+TimeoutStopSec=30
+# 143 = 128+SIGTERM: treat a clean SIGTERM shutdown as success
+SuccessExitStatus=143
+LimitNOFILE=65536
+StandardOutput=append:/var/log/inventory-api/server.log
+StandardError=append:/var/log/inventory-api/server.log
+
+[Install]
+WantedBy=multi-user.target
