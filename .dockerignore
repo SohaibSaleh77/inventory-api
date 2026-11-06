@@ -1,0 +1,42 @@
+# Keep the Docker build context minimal: the builder only needs pom.xml + src/.
+
+# Build output and VCS metadata
+target/
+.git/
+.gitignore
+.gitattributes
+
+# Local IDE / editor cruft
+.idea/
+*.iml
+.vscode/
+.classpath
+.project
+.settings/
+.DS_Store
+
+# Docs - README.md is kept, the rest is not needed to build the image
+**/*.md
+!README.md
+docs/
+
+# Ops assets that never belong in the image
+.github/
+k8s/
+systemd/
+loadtest/
+scripts/
+bin/
+
+# Local configuration and runtime artifacts (secrets!)
+config/
+logs/
+*.log
+*.pid
+.env
+.env.*
+!.env.example
+
+# Misc
+Makefile
+jacoco.exec

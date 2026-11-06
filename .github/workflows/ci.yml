@@ -1,0 +1,62 @@
+# CI: full verification (unit + integration + e2e) against a real MySQL 8
+# service container. Integration tests point at inventory_db_test via
+# -Ddb.url/-Ddb.username and the IMS_TEST_DB_PASSWORD environment variable.
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+    tags: ['v*']
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+
+    env:
+      MAVEN_OPTS: -Xmx1g
+
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: inventory_db_test
+          MYSQL_USER: ims_test
+          MYSQL_PASSWORD: ims_test_pw
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -proot"
+          --health-interval=5s
+          --health-timeout=3s
+          --health-retries=20
+          --log-bin-trust-function-creators=1
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21 (Temurin) with Maven cache
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      - name: Build and verify (unit + integration + e2e)
+        env:
+          IMS_TEST_DB_PASSWORD: ims_test_pw
+        run: >
+          mvn -B verify
+          -Ddb.url='jdbc:mysql://127.0.0.1:3306/inventory_db_test?useSSL=false&allowPublicKeyRetrieval=true&connectionTimeZone=LOCAL'
+          -Ddb.username=ims_test
+
+      - name: Upload JaCoCo coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jacoco-report
+          path: target/site/jacoco
+          if-no-files-found: ignore
+          retention-days: 14
